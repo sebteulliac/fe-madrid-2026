@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FE Madrid">
+<meta name="theme-color" content="#e8001d">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Formula E Madrid 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyATU5SVKwF5La1o-nbjkOl_sTBOH12ZS-Y",
+  authDomain: "creators-crew.firebaseapp.com",
+  projectId: "creators-crew",
+  storageBucket: "creators-crew.firebasestorage.app",
+  messagingSenderId: "1070517653737",
+  appId: "1:1070517653737:web:c2b5da98d08958f62a2078",
+  measurementId: "G-1Q7QE9VQPK"
+};
+  const VAPID_KEY = "BJJbpYNLXm55w7qZrT7hGftdBOblK_KPKmoelGzncXUCwOLxatGOy_rIcdhBDf-4uOuNhGsq_TC-PdPzhzWcphg";
+  
+  const app = initializeApp(FB_CONFIG);
+  const db = getFirestore(app);
+
+  // Expose to global scope
+  window._db = db;
+  window._fbModules = { doc, getDoc, setDoc, onSnapshot, collection, getDocs };
+
+  // Push notifications setup
+  async function setupPush() {
+    try {
+      const messaging = getMessaging(app);
+      const reg = await navigator.serviceWorker.ready;
+      const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+      if (token) {
+        await setDoc(doc(db, 'push_tokens', token.slice(-20)), { token, ts: Date.now() });
+        window._pushToken = token;
+      }
+      onMessage(messaging, (payload) => {
+        showToast(payload.notification?.title || 'Update', payload.notification?.body || '');
+      });
+    } catch(e) { console.log('Push not available:', e.message); }
+  }
+
+  window.addEventListener('load', () => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(() => {
+        if (Notification.permission === 'granted') setupPush();
+      });
+    }
+    window._fbReady = true;
+    window.dispatchEvent(new Event('fb-ready'));
+  });
+
+  window._setupPush = setupPush;
+  window._sendPushToAll = async function(title, body) {
+    // Store alert in Firestore — a Cloud Function would fan out to all tokens
+    // For simplicity: store in alerts collection, all clients listen
+    const { doc: d, setDoc: s } = window._fbModules;
+    await s(d(db, 'alerts', 'latest'), { title, body, ts: Date.now() });
+    showToast('Alerte envoyée ✓', body);
+  };
+</script>
+
+<style>
+:root {
+  --black:#0a0a0a; --white:#f5f5f0; --red:#e8001d;
+  --yellow:#f5c800; --gray:#1e1e1e; --muted:#888;
+  --alert:#ff3b30; --warn:#ff9500; --blue:#4a9eff; --green:#44cc66;
+  --admin:#c084fc;
+  font-size:16px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--black);color:var(--white);font-family:'Barlow',sans-serif;font-weight:400;-webkit-text-size-adjust:100%;}
+
+/* ── SCREENS ── */
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .35s;}
+.screen.hidden{transform:translateX(100%);opacity:0;pointer-events:none;}
+.screen.slide-left{transform:translateX(-100%);opacity:0;pointer-events:none;}
+
+/* ── HOME ── */
+#screen-home{background:var(--black);justify-content:center;align-items:center;gap:0;}
+.home-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 30% 40%, rgba(232,0,29,.18) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(245,200,0,.08) 0%, transparent 50%);}
+.home-content{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;padding:40px 32px;width:100%;}
+.home-logo{font-family:'Barlow Condensed',sans-serif;font-size:3.2rem;font-weight:900;text-transform:uppercase;line-height:1;text-align:center;margin-bottom:4px;}
+.home-logo span{color:var(--yellow);}
+.home-sub{font-size:0.85rem;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;text-align:center;margin-bottom:56px;}
+.home-btn{width:100%;padding:18px 24px;border-radius:14px;border:none;font-family:'Barlow Condensed',sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;transition:transform .15s,opacity .15s;}
+.home-btn:active{transform:scale(.97);}
+.home-btn-guest{background:var(--red);color:#fff;}
+.home-btn-admin{background:#1a1a2a;border:1px solid #333;color:var(--admin);}
+.home-btn-icon{font-size:1.4rem;}
+.home-event-info{margin-top:32px;text-align:center;font-size:0.72rem;color:rgba(255,255,255,.3);letter-spacing:1.5px;text-transform:uppercase;line-height:2;}
+
+/* ── PIN MODAL ── */
+#pin-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(8px);}
+#pin-modal.hidden{display:none;}
+.pin-sheet{background:#111;border-radius:24px 24px 0 0;padding:32px 24px 48px;width:100%;max-width:420px;}
+.pin-title{font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--admin);margin-bottom:6px;}
+.pin-sub{font-size:0.8rem;color:var(--muted);margin-bottom:28px;}
+.pin-dots{display:flex;gap:16px;justify-content:center;margin-bottom:32px;}
+.pin-dot{width:16px;height:16px;border-radius:50%;background:#333;transition:background .2s;}
+.pin-dot.filled{background:var(--admin);}
+.pin-dot.error{background:var(--alert);}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.pin-key{background:#1e1e1e;border:1px solid #2a2a2a;border-radius:12px;padding:18px;font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:700;text-align:center;cursor:pointer;transition:background .1s;color:var(--white);}
+.pin-key:active{background:#333;}
+.pin-key.del{color:var(--muted);font-size:1.1rem;}
+.pin-cancel{margin-top:16px;width:100%;padding:14px;background:none;border:1px solid #333;border-radius:10px;color:var(--muted);font-family:'Barlow',sans-serif;font-size:0.9rem;cursor:pointer;}
+
+/* ── SHARED HEADER ── */
+.app-header{background:var(--red);padding:env(safe-area-inset-top, 12px) 16px 16px;padding-top:calc(env(safe-area-inset-top, 0px) + 12px);flex-shrink:0;position:relative;overflow:hidden;}
+.app-header::before{content:'E';position:absolute;right:-8px;top:-16px;font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:130px;color:rgba(255,255,255,0.06);line-height:1;pointer-events:none;}
+.app-header.admin-mode{background:linear-gradient(135deg,#1a0a2a,#0d0d1a);border-bottom:2px solid var(--admin);}
+.header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+.back-btn{background:rgba(255,255,255,.15);border:none;border-radius:8px;color:#fff;font-size:0.85rem;padding:6px 12px;cursor:pointer;font-family:'Barlow',sans-serif;}
+.header-mode-badge{font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:3px 8px;border-radius:4px;background:rgba(192,132,252,.2);color:var(--admin);}
+.header-title{font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:900;text-transform:uppercase;line-height:1;color:#fff;}
+.header-title span{color:var(--yellow);}
+.header-sub{font-size:0.78rem;color:rgba(255,255,255,.75);margin-top:4px;}
+
+/* ── TABS ── */
+.nav-tabs{display:flex;background:#111;border-bottom:1px solid #222;flex-shrink:0;}
+.tab-btn{flex:1;padding:13px 4px;background:none;border:none;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;}
+.tab-btn.active{color:var(--white);}
+.tab-btn[data-t="fri"].active{border-bottom-color:var(--yellow);}
+.tab-btn[data-t="sat"].active{border-bottom-color:var(--red);}
+.tab-btn[data-t="sun"].active{border-bottom-color:#666;}
+.tab-btn[data-t="guests"].active{border-bottom-color:var(--blue);}
+.tab-btn[data-t="admin"].active{border-bottom-color:var(--admin);}
+
+/* ── SCROLL CONTENT ── */
+.scroll-content{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);}
+
+/* ── SECTIONS ── */
+.tab-section{display:none;}.tab-section.visible{display:block;}
+
+/* ── DAY HEADING ── */
+.day-heading{display:flex;align-items:center;gap:14px;margin-bottom:18px;}
+.day-number{font-family:'Barlow Condensed',sans-serif;font-size:3.8rem;font-weight:900;line-height:1;}
+.day-name{font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:700;text-transform:uppercase;line-height:1;}
+.day-sub{font-size:0.68rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:4px;}
+
+/* ── BANNERS ── */
+.banner{border-radius:8px;padding:13px 14px;margin-bottom:12px;font-size:0.82rem;line-height:1.55;}
+.banner strong{font-family:'Barlow Condensed',sans-serif;font-size:0.88rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:4px;}
+.b-red{background:#1a0808;border:1px solid #3a1515;border-left:3px solid var(--alert);color:#ffaaaa;}.b-red strong{color:var(--alert);}
+.b-orange{background:#120d00;border:1px solid #3a2500;border-left:3px solid var(--warn);color:#ffcc88;}.b-orange strong{color:var(--warn);}
+.b-blue{background:#080d1a;border:1px solid #152a3a;border-left:3px solid var(--blue);color:#aaccff;}.b-blue strong{color:var(--blue);}
+.b-green{background:#081408;border:1px solid #1a3a1a;border-left:3px solid var(--green);color:#aaffcc;}.b-green strong{color:var(--green);}
+
+/* ── EVENTS ── */
+.event{display:flex;gap:14px;padding:15px 0;border-bottom:1px solid #1e1e1e;align-items:flex-start;}
+.event:last-child{border-bottom:none;}
+.event-time{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:1.05rem;color:var(--muted);min-width:50px;padding-top:3px;line-height:1;}
+.event-body{flex:1;}
+.event-title{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px;line-height:1.2;}
+.event-detail{font-size:0.82rem;color:#bbb;line-height:1.55;margin-bottom:7px;}
+.event-detail a{color:#bbb;text-decoration:underline;text-decoration-color:#444;}
+.event-guests{font-size:0.78rem;color:#6a8aaa;margin-bottom:8px;line-height:1.6;}
+.event-guests span{color:#8ab0cc;font-weight:500;}
+.event-guests .diet{color:#cccc55;}
+.event-guests .flag-r{color:#ff9090;}
+.event-guests .warn{color:var(--warn);}
+.tag{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:3px 8px;border-radius:3px;margin-bottom:7px;margin-right:4px;}
+.tag-transfer{background:#1a2a3a;color:#6ab0f5;}
+.tag-race{background:#2a0a0a;color:var(--red);}
+.tag-social{background:#2a2000;color:var(--yellow);}
+.tag-alert{background:#2a0000;color:#ff6060;}
+.tag-warn{background:#1a1200;color:var(--warn);}
+.tbc{font-size:0.58rem;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;border:1px solid #333;border-radius:3px;padding:2px 5px;margin-left:6px;vertical-align:middle;}
+.cal-btn{display:inline-flex;align-items:center;gap:7px;background:#242424;border:1px solid #383838;border-radius:8px;padding:9px 14px;color:var(--white);font-family:'Barlow',sans-serif;font-size:0.76rem;font-weight:500;text-decoration:none;min-height:40px;}
+.cal-btn svg{opacity:.7;flex-shrink:0;}
+.section-label{font-family:'Barlow Condensed',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin:16px 0 10px;}
+.divider{height:1px;background:linear-gradient(to right,transparent,#2a2a2a,transparent);margin:8px 0 16px;}
+
+/* ── WHATSAPP ── */
+.wa-card{background:#0a1a0a;border:1px solid #1a3a1a;border-radius:12px;padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:14px;}
+.wa-icon{width:48px;height:48px;background:#25d366;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.wa-body{flex:1;}
+.wa-title{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;color:#44dd77;margin-bottom:4px;}
+.wa-sub{font-size:0.76rem;color:#88aa88;line-height:1.5;}
+.wa-btn{display:inline-flex;align-items:center;gap:7px;background:#25d366;border-radius:8px;padding:10px 16px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:700;text-decoration:none;margin-top:10px;text-transform:uppercase;min-height:42px;}
+
+/* ── GUEST CARDS ── */
+.guest-card{background:#111;border:1px solid #222;border-radius:12px;padding:16px;margin-bottom:12px;position:relative;}
+.guest-card.fr{border-left:3px solid var(--alert);}
+.guest-card.fo{border-left:3px solid var(--warn);}
+.guest-card.fg{border-left:3px solid var(--green);}
+.guest-card.fb{border-left:3px solid var(--blue);}
+.guest-num{position:absolute;top:16px;right:16px;font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:#252525;}
+.guest-name{font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:700;text-transform:uppercase;margin-bottom:3px;padding-right:28px;}
+.guest-cat{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:3px 7px;border-radius:3px;margin-left:6px;background:#222;color:#777;vertical-align:middle;}
+.guest-meta{font-size:0.73rem;color:var(--muted);margin-bottom:12px;}
+.guest-flights{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+.fpill{background:#1a2a3a;border-radius:8px;padding:10px 12px;font-size:0.76rem;flex:1;min-width:140px;line-height:1.5;}
+.fpill .fl{font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:3px;}
+.fpill .fn{font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:700;color:#6ab0f5;}
+.fpill .fr-r{font-size:0.76rem;color:#bbb;}
+.fpill .ft{font-size:0.7rem;color:#777;margin-top:2px;}
+.fpill.nt{background:#1a1200;}.fpill.nt .fn{color:var(--warn);}
+.guest-note{background:#1a1a1a;border-radius:6px;padding:10px 12px;font-size:0.76rem;color:#bbb;line-height:1.55;margin-top:6px;}
+.guest-note.nr{background:#1a0808;color:#ff9090;}
+.guest-note.no{background:#120d00;color:#ffcc88;}
+.guest-note.ng{background:#0a1a0a;color:#88cc88;}
+.badge-diet{display:inline-block;background:#1a1a00;border:1px solid #333300;border-radius:4px;padding:4px 9px;font-size:0.7rem;font-weight:600;color:#cccc44;margin-top:8px;}
+.badge-allergy{display:inline-block;background:#1a0000;border:1px solid #330000;border-radius:4px;padding:4px 9px;font-size:0.7rem;font-weight:600;color:#ff9090;margin-top:8px;margin-left:6px;}
+.guest-contacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.contact-btn{display:inline-flex;align-items:center;gap:6px;border-radius:8px;padding:9px 13px;font-size:0.76rem;font-weight:500;text-decoration:none;min-height:40px;}
+.contact-tel{background:#1a2a1a;border:1px solid #2a4a2a;color:#88cc88;}
+.contact-email{background:#1a1a2a;border:1px solid #2a2a4a;color:#88aaff;}
+
+/* ── PARKING ── */
+.parking-card{background:#0a1a0a;border:1px solid #1a3a1a;border-radius:8px;padding:14px;margin-top:12px;}
+.parking-title{font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:700;text-transform:uppercase;color:#66cc66;margin-bottom:10px;}
+.p-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:0.8rem;padding:7px 0;border-bottom:1px solid #1a2a1a;color:#ccc;}
+.p-row:last-child{border-bottom:none;}
+.p-lbl{color:#666;font-size:0.65rem;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;}
+.parking-qr{font-size:0.73rem;color:#66cc66;margin-top:10px;padding-top:10px;border-top:1px solid #1a3a1a;line-height:1.5;}
+
+/* ── FLAGS BOX ── */
+.flags-box{background:#110a0a;border:1px solid #2a1a1a;border-radius:10px;padding:16px;margin-bottom:20px;}
+.flags-title{font-family:'Barlow Condensed',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--alert);margin-bottom:12px;}
+.flag-item{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #1a0a0a;font-size:0.78rem;line-height:1.55;color:#ddd;}
+.flag-item:last-child{border-bottom:none;}
+.fdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+.fdot-red{background:var(--alert);}.fdot-orange{background:var(--warn);}.fdot-blue{background:var(--blue);}.fdot-green{background:var(--green);}
+
+/* ── ADMIN TAB ── */
+.admin-section-title{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--admin);margin:20px 0 12px;display:flex;align-items:center;gap:8px;}
+.admin-section-title::after{content:'';flex:1;height:1px;background:rgba(192,132,252,.2);}
+
+/* Checklist */
+.checklist-item{display:flex;align-items:center;gap:14px;padding:13px 14px;background:#111;border:1px solid #222;border-radius:10px;margin-bottom:8px;cursor:pointer;transition:background .15s;}
+.checklist-item:active{background:#1a1a1a;}
+.checklist-item.checked{background:#0a1a0a;border-color:#1a3a1a;}
+.check-circle{width:28px;height:28px;border-radius:50%;border:2px solid #333;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;}
+.checklist-item.checked .check-circle{background:var(--green);border-color:var(--green);}
+.check-name{flex:1;}
+.check-name .cn{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;}
+.check-name .cm{font-size:0.72rem;color:var(--muted);margin-top:2px;}
+.checklist-item.checked .cn{color:var(--green);}
+.check-time{font-size:0.72rem;color:var(--muted);font-family:'Barlow Condensed',sans-serif;}
+
+/* Live edit */
+.edit-card{background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:14px;margin-bottom:10px;}
+.edit-label{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.edit-input{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:var(--white);font-family:'Barlow',sans-serif;font-size:0.9rem;padding:10px 12px;outline:none;-webkit-appearance:none;}
+.edit-input:focus{border-color:var(--admin);}
+.edit-save{margin-top:8px;background:var(--admin);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;min-height:40px;}
+
+/* Push alert */
+.push-card{background:#1a0a2a;border:1px solid #3a1a4a;border-radius:10px;padding:16px;margin-bottom:12px;}
+.push-input{width:100%;background:#0d0d1a;border:1px solid #333;border-radius:6px;color:var(--white);font-family:'Barlow',sans-serif;font-size:0.9rem;padding:10px 12px;outline:none;margin-bottom:8px;-webkit-appearance:none;}
+.push-input:focus{border-color:var(--admin);}
+.push-btn{width:100%;background:linear-gradient(135deg,#7c3aed,#c084fc);color:#fff;border:none;border-radius:10px;padding:14px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;cursor:pointer;min-height:44px;}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);left:50%;transform:translateX(-50%) translateY(80px);background:#222;border:1px solid #333;border-radius:12px;padding:12px 20px;font-size:0.85rem;color:var(--white);z-index:1000;transition:transform .3s cubic-bezier(.4,0,.2,1);white-space:nowrap;max-width:calc(100vw - 32px);text-align:center;}
+#toast.show{transform:translateX(-50%) translateY(0);}
+
+/* ── NOTIFY BANNER ── */
+.notify-bar{background:#0d0d1a;border-bottom:1px solid #222;padding:10px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0;}
+.notify-bar.hidden{display:none;}
+.notify-text{font-size:0.78rem;color:#8ab0cc;flex:1;line-height:1.4;}
+.notify-allow{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-size:0.78rem;font-weight:700;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════
+     SCREEN: HOME
+══════════════════════════════════ -->
+<div class="screen" id="screen-home">
+  <div class="home-bg"></div>
+  <div class="home-content">
+    <div class="home-logo">Formula <span>E</span><br>Madrid</div>
+    <div class="home-sub">20 – 22 mars 2026 · Jarama</div>
+
+    <button class="home-btn home-btn-guest" onclick="goGuest()">
+      <span>Vue Invité</span>
+      <span class="home-btn-icon">🏎️</span>
+    </button>
+    <button class="home-btn home-btn-admin" onclick="showPin()">
+      <span>Vue Organisateur</span>
+      <span class="home-btn-icon">⚙️</span>
+    </button>
+
+    <div class="home-event-info">
+      Nissan Motor Corporation<br>
+      Circuito del Jarama · Madrid
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PIN MODAL
+══════════════════════════════════ -->
+<div id="pin-modal" class="hidden">
+  <div class="pin-sheet">
+    <div class="pin-title">Accès organisateur</div>
+    <div class="pin-sub">Entrez votre code PIN</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      <div class="pin-key" onclick="pinKey('1')">1</div>
+      <div class="pin-key" onclick="pinKey('2')">2</div>
+      <div class="pin-key" onclick="pinKey('3')">3</div>
+      <div class="pin-key" onclick="pinKey('4')">4</div>
+      <div class="pin-key" onclick="pinKey('5')">5</div>
+      <div class="pin-key" onclick="pinKey('6')">6</div>
+      <div class="pin-key" onclick="pinKey('7')">7</div>
+      <div class="pin-key" onclick="pinKey('8')">8</div>
+      <div class="pin-key" onclick="pinKey('9')">9</div>
+      <div class="pin-key" onclick="pinKey('del')" style="grid-column:1">⌫</div>
+      <div class="pin-key" onclick="pinKey('0')">0</div>
+      <div class="pin-key" style="background:none;border:none;grid-column:3"></div>
+    </div>
+    <button class="pin-cancel" onclick="hidePin()">Annuler</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     SCREEN: GUEST
+══════════════════════════════════ -->
+<div class="screen hidden" id="screen-guest">
+  <div class="app-header">
+    <div class="header-row">
+      <button class="back-btn" onclick="goHome()">← Accueil</button>
+    </div>
+    <div class="header-title">Formula <span>E</span> Madrid</div>
+    <div class="header-sub">20 – 22 mars 2026 · Circuito del Jarama</div>
+  </div>
+
+  <div class="notify-bar" id="notify-bar">
+    <div class="notify-text">🔔 Activer les notifications pour recevoir les alertes en direct</div>
+    <button class="notify-allow" onclick="requestPush()">Activer</button>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" data-t="fri" onclick="switchTab(this,'fri','guest')">Ven.</button>
+    <button class="tab-btn" data-t="sat" onclick="switchTab(this,'sat','guest')">Sam.</button>
+    <button class="tab-btn" data-t="sun" onclick="switchTab(this,'sun','guest')">Dim.</button>
+    <button class="tab-btn" data-t="guests" onclick="switchTab(this,'guests','guest')">Invités</button>
+  </div>
+
+  <div class="scroll-content">
+
+    <!-- FRIDAY GUEST -->
+    <div class="tab-section visible" id="g-fri">
+      <div class="day-heading">
+        <div class="day-number" style="color:var(--yellow)">20</div>
+        <div><div class="day-name">Vendredi</div><div class="day-sub">Arrivées &amp; Soirée</div></div>
+      </div>
+
+      <div class="banner b-green">
+        <strong>🅿️ Sam Bassett — Parking confirmé</strong>
+        Parking La Latina · Calle Toledo 88 · KW75FFN
+      </div>
+
+      <div class="section-label">Transferts aéroport → Room Mate Macarena</div>
+
+      <div class="event"><div class="event-time">09:30</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Arrivée — Paris CDG (AF1000)</div><div class="event-guests"><span>Sébastien Cailluet</span> · arr. 09:10</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T093000%0ADTEND:20260320T110000%0ASUMMARY:Pick-up Cailluet — AF1000%0ALOCATION:Aéroport Madrid Barajas%0AEND:VEVENT%0AEND:VCALENDAR" download="arr_cailluet.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">09:45</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Arrivée — Bruxelles (IB604)</div><div class="event-guests"><span>Jeremy Caira</span> · arr. 09:25</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T094500%0ADTEND:20260320T111500%0ASUMMARY:Pick-up Caira — IB604%0ALOCATION:Aéroport Madrid Barajas%0AEND:VEVENT%0AEND:VCALENDAR" download="arr_caira.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">11:40</div><div class="event-body"><span class="tag tag-transfer">Groupé</span><div class="event-title">Arrivées Lisbonne + Paris CDG</div><div class="event-guests"><span>Hugo Marcos</span> · IB0530 arr.10:45<br><span>Jean-Baptiste Nicolet</span> · AF1300 arr.11:30</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T114000%0ADTEND:20260320T130000%0ASUMMARY:Pick-up Marcos+Nicolet%0ALOCATION:Aéroport Madrid Barajas%0AEND:VEVENT%0AEND:VCALENDAR" download="arr_group.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">12:45</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Arrivée — Rome (FR9601)</div><div class="event-guests"><span>Luca Rallo</span> · arr. 12:25</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T124500%0ADTEND:20260320T140000%0ASUMMARY:Pick-up Rallo — FR9601%0ALOCATION:Aéroport Madrid Barajas%0AEND:VEVENT%0AEND:VCALENDAR" download="arr_rallo.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">16:00</div><div class="event-body"><span class="tag tag-transfer">Groupé</span><div class="event-title">Arrivée — Francfort (LH1114)</div><div class="event-guests"><span>S.L. Eisenberger</span> + <span>L.T. Franz</span> · arr. 15:40<br><span class="diet">Franz : végétarien</span></div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T160000%0ADTEND:20260320T175000%0ASUMMARY:Pick-up Eisenberger+Franz — LH1114%0ALOCATION:Aéroport Madrid Barajas%0AEND:VEVENT%0AEND:VCALENDAR" download="arr_ger.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">16:30</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Arrivée — Copenhague (UX3248)</div><div class="event-guests"><span>Felix Smith</span> · arr. 16:10</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T163000%0ADTEND:20260320T180000%0ASUMMARY:Pick-up Smith — UX3248%0ALOCATION:Aéroport Madrid Barajas%0AEND:VEVENT%0AEND:VCALENDAR" download="arr_smith.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="divider"></div><div class="section-label">Soirée</div>
+
+      <div class="event"><div class="event-time">18:30</div><div class="event-body"><span class="tag tag-social">Soirée</span><div class="event-title">Spectacle Flamenco</div><div class="event-detail">RDV lobby · <a href="https://maps.google.com/?q=C.+del+Pez+10,+28004+Madrid" target="_blank">C. del Pez 10, Madrid</a></div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T183000%0ADTEND:20260320T203000%0ASUMMARY:🎭 Flamenco — Madrid%0ALOCATION:C. del Pez 10%2C 28004 Madrid%0AEND:VEVENT%0AEND:VCALENDAR" download="flamenco.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">19:15</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Arrivée — Hambourg (IB774)</div><div class="event-guests"><span>Thilo Mohns</span> · arr. 18:55</div></div></div>
+
+      <div class="event"><div class="event-time">20:30</div><div class="event-body"><span class="tag tag-social">Dîner</span><div class="event-title">Botania Restaurant</div><div class="event-detail">RDV lobby · <a href="https://maps.google.com/?q=Plaza+de+España+5,+28008+Madrid" target="_blank">Plaza de España 5</a></div><div class="event-guests"><span class="diet">Franz végétarien · Caira sans coriandre</span></div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260320T203000%0ADTEND:20260320T223000%0ASUMMARY:🍽️ Dîner Botania%0ALOCATION:Plaza de España 5%2C 28008 Madrid%0AEND:VEVENT%0AEND:VCALENDAR" download="diner1.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">22:20</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Arrivée — Paris Orly (TO4780)</div><div class="event-guests"><span>Katherine Zachary</span> · arr. 22:00</div></div></div>
+    </div>
+
+    <!-- SATURDAY GUEST -->
+    <div class="tab-section" id="g-sat">
+      <div class="day-heading">
+        <div class="day-number" style="color:var(--red)">21</div>
+        <div><div class="day-name">Samedi</div><div class="day-sub">Race Day ⚡</div></div>
+      </div>
+      <div class="banner b-red"><strong>🚨 Hugo Marcos — Départ ce soir</strong>Vol IB0537 MAD→LIS 19:40. Transfert séparé ~17h.</div>
+
+      <div class="event"><div class="event-time">09:00</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Départ → Jarama</div><div class="event-detail">RDV lobby Room Mate Macarena</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T090000%0ADTEND:20260321T100000%0ASUMMARY:🚌 Transfert → Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="jarama.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">10:00</div><div class="event-body"><span class="tag tag-race">Nissan</span><div class="event-title">Nissan Race Suite — Ouverture</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T100000%0ADTEND:20260321T104000%0ASUMMARY:🏎️ Nissan Race Suite — Ouverture%0ALOCATION:Circuito del Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="suite.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">10:40</div><div class="event-body"><span class="tag tag-race">Qualifs</span><div class="event-title">Formula E — Qualifications</div><div class="event-detail">10:40 – 11:50</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T104000%0ADTEND:20260321T115000%0ASUMMARY:⚡ Qualifications Formula E%0ALOCATION:Circuito del Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="qualifs.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">13:15</div><div class="event-body"><span class="tag tag-race">Pitlane</span><div class="event-title">Pitlane Walk</div><div class="event-detail">13:15 – 14:00</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T131500%0ADTEND:20260321T140000%0ASUMMARY:🔧 Pitlane Walk%0ALOCATION:Circuito del Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="pitlane.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">14:33</div><div class="event-body"><span class="tag tag-race">Race</span><div class="event-title">Grid Procedure</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T143300%0ADTEND:20260321T150500%0ASUMMARY:🏁 Grid Procedure%0ALOCATION:Circuito del Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="grid.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">15:05</div><div class="event-body"><span class="tag tag-race">Course</span><div class="event-title">⚡ Round 6 — Madrid ePrix</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T150500%0ADTEND:20260321T160000%0ASUMMARY:⚡ Round 6 — Madrid ePrix%0ALOCATION:Circuito del Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="race.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">16:00</div><div class="event-body"><span class="tag tag-race">Podium</span><div class="event-title">Cérémonie du Podium</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T160000%0ADTEND:20260321T173000%0ASUMMARY:🏆 Podium Formula E%0ALOCATION:Circuito del Jarama%0AEND:VEVENT%0AEND:VCALENDAR" download="podium.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">17:00</div><div class="event-body"><span class="tag tag-transfer">Transfert</span><div class="event-title">Retour → Hôtel Torre de Madrid</div><div class="event-detail">TBC · zone parking Jarama</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T170000%0ADTEND:20260321T183000%0ASUMMARY:🚌 Retour Jarama → Torre de Madrid%0AEND:VEVENT%0AEND:VCALENDAR" download="retour.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">20:15</div><div class="event-body"><span class="tag tag-social">Dîner</span><div class="event-title">Papúa Restaurant</div><div class="event-detail">RDV lobby · <a href="https://maps.google.com/?q=Plaza+de+Colón+4,+28001+Madrid" target="_blank">Plaza de Colón 4</a></div><div class="event-guests"><span class="diet">Franz végétarien · Caira sans coriandre</span></div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260321T202000%0ADTEND:20260321T230000%0ASUMMARY:🍽️ Dîner Papúa%0ALOCATION:Plaza de Colón 4%2C 28001 Madrid%0AEND:VEVENT%0AEND:VCALENDAR" download="diner2.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+    </div>
+
+    <!-- SUNDAY GUEST -->
+    <div class="tab-section" id="g-sun">
+      <div class="day-heading">
+        <div class="day-number" style="color:#555">22</div>
+        <div><div class="day-name">Dimanche</div><div class="day-sub">Départs</div></div>
+      </div>
+      <div class="banner b-orange"><strong>ℹ️ Jeremy Caira</strong>Reste jusqu'au lundi 23 à ses frais. Hors logistique groupe.</div>
+
+      <div class="event"><div class="event-time">06:25</div><div class="event-body"><span class="tag tag-transfer">Départ</span><div class="event-title">Transfert → Rome (FR2436)</div><div class="event-guests"><span>Luca Rallo</span> · dép. 08:55 · RDV lobby</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260322T062500%0ADTEND:20260322T085500%0ASUMMARY:🛫 Départ Rallo — FR2436%0AEND:VEVENT%0AEND:VCALENDAR" download="dep_rallo.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">07:30</div><div class="event-body"><span class="tag tag-transfer">Départ</span><div class="event-title">Transfert → Paris CDG (AF1001)</div><div class="event-guests"><span>Jean-Baptiste Nicolet</span> · dép. 10:00</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260322T073000%0ADTEND:20260322T100000%0ASUMMARY:🛫 Départ Nicolet — AF1001%0AEND:VEVENT%0AEND:VCALENDAR" download="dep_nicolet.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">09:30</div><div class="event-body"><span class="tag tag-transfer">Groupé</span><div class="event-title">Départ → Munich (LH1801)</div><div class="event-guests"><span>S.L. Eisenberger</span> + <span>L.T. Franz</span> · dép. 12:00</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260322T093000%0ADTEND:20260322T120000%0ASUMMARY:🛫 Départs Eisenberger+Franz — LH1801%0AEND:VEVENT%0AEND:VCALENDAR" download="dep_ger.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">10:00</div><div class="event-body"><span class="tag tag-transfer">Groupé</span><div class="event-title">Départs — CPH &amp; Paris CDG</div><div class="event-guests"><span>Felix Smith</span> · D83705 dép.12:30<br><span>Sébastien Cailluet</span> · AF1301 dép.12:35</div><a class="cal-btn" href="data:text/calendar;charset=utf-8,BEGIN:VCALENDAR%0AVERSION:2.0%0ABEGIN:VEVENT%0ADTSTART:20260322T100000%0ADTEND:20260322T123500%0ASUMMARY:🛫 Départs Smith+Cailluet%0AEND:VEVENT%0AEND:VCALENDAR" download="dep_sc.ics"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendrier</a></div></div>
+
+      <div class="event"><div class="event-time">18:15</div><div class="event-body"><span class="tag tag-warn">Sans transfert</span><div class="event-title">Départ — Paris Orly (TO4639)</div><div class="event-guests"><span>Katherine Zachary</span> · dép. 20:45 · pas de transfert Nissan</div></div></div>
+    </div>
+
+    <!-- GUESTS TAB -->
+    <div class="tab-section" id="g-guests">
+      <div class="wa-card">
+        <div class="wa-icon"><svg width="26" height="26" fill="white" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.122 1.532 5.859L.073 23.486a.75.75 0 00.92.92l5.627-1.459A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.718 9.718 0 01-4.964-1.361l-.356-.211-3.688.957.977-3.578-.232-.368A9.718 9.718 0 012.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg></div>
+        <div class="wa-body">
+          <div class="wa-title">Groupe FE Madrid</div>
+          <div class="wa-sub">Updates en temps réel pendant le weekend</div>
+          <a class="wa-btn" href="https://chat.whatsapp.com/EoF7Vt3QazxDNQ2e9np7oF?mode=gi_t" target="_blank">Rejoindre →</a>
+        </div>
+      </div>
+
+      <div class="flags-box">
+        <div class="flags-title">⚠️ Points d'attention</div>
+        <div class="flag-item"><div class="fdot fdot-red"></div><div><strong>Hugo Marcos</strong> — Départ sam. 21 à 19:40 (IB0537). Transfert séparé. Pas de dîner.</div></div>
+        <div class="flag-item"><div class="fdot fdot-green"></div><div><strong>Sam Bassett</strong> — Voiture perso. Parking La Latina réservé (KW75FFN). Chambre partagée.</div></div>
+        <div class="flag-item"><div class="fdot fdot-orange"></div><div><strong>Jeremy Caira</strong> — Reste lundi 23 à ses frais. Hors logistique groupe.</div></div>
+        <div class="flag-item"><div class="fdot fdot-orange"></div><div><strong>Katherine Zachary</strong> — Pas de transfert retour aéroport.</div></div>
+        <div class="flag-item"><div class="fdot fdot-orange"></div><div><strong>Thilo Mohns</strong> — Transfert retour TBC (IB1669 16:40).</div></div>
+        <div class="flag-item"><div class="fdot fdot-red"></div><div><strong>Régimes</strong> — Caira allergie coriandre · Franz végétarien.</div></div>
+      </div>
+
+      <!-- Guest cards -->
+      <div class="guest-card"><div class="guest-num">1</div><div class="guest-name">Rallo Luca<span class="guest-cat">Influencer</span></div><div class="guest-meta">Italy · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">FR9601</div><div class="fr-r">FCO → MAD</div><div class="ft">20/03 · 09:50 → 12:25 · pick-up 12:45</div></div><div class="fpill"><div class="fl">Retour</div><div class="fn">FR2436</div><div class="fr-r">MAD → FCO</div><div class="ft">22/03 · 08:55 · pick-up 06:25</div></div></div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+393468045994"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+39 34 68 04 59 94</a><a class="contact-btn contact-email" href="mailto:luca.rallo@gmail.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>luca.rallo@gmail.com</a></div></div>
+
+      <div class="guest-card fg"><div class="guest-num">2</div><div class="guest-name">Bassett Sam<span class="guest-cat">Influencer</span></div><div class="guest-meta">UK · EUR</div><div class="guest-note ng">🚗 Voiture perso depuis Londres · Chambre partagée (colocataire à confirmer)</div><div class="parking-card"><div class="parking-title">🅿️ Parking La Latina</div><div class="p-row"><span class="p-lbl">Adresse</span><span>Calle Toledo 88, 28005</span></div><div class="p-row"><span class="p-lbl">Véhicule</span><span>Land Rover Defender · KW75FFN</span></div><div class="p-row"><span class="p-lbl">Résa</span><span>P3412C1-0317-26-045A345226</span></div><div class="p-row"><span class="p-lbl">Période</span><span>20/03 09h → 22/03 22h · 42,60€</span></div><div class="parking-qr">Barrière fermée : QR code · SAV 91 287 48 14</div></div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+17949039788"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>(794) 903-9788</a><a class="contact-btn contact-email" href="mailto:Info@samuelsbassett.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Info@samuelsbassett.com</a></div></div>
+
+      <div class="guest-card"><div class="guest-num">3</div><div class="guest-name">Nicolet Jean-Baptiste<span class="guest-cat">Influencer</span></div><div class="guest-meta">France · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">AF1300</div><div class="fr-r">CDG → MAD</div><div class="ft">20/03 · arr.11:30 · pick-up 11:40 (groupé Marcos)</div></div><div class="fpill"><div class="fl">Retour</div><div class="fn">AF1001</div><div class="fr-r">MAD → CDG</div><div class="ft">22/03 · dép.10:00 · pick-up 07:30</div></div></div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+33674581067"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+33 6 74 58 10 67</a><a class="contact-btn contact-email" href="mailto:jeanbaptistenicolet@me.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>jeanbaptistenicolet@me.com</a></div></div>
+
+      <div class="guest-card"><div class="guest-num">4</div><div class="guest-name">Smith Felix<span class="guest-cat">Influencer</span></div><div class="guest-meta">eNest · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">UX3248</div><div class="fr-r">CPH → MAD</div><div class="ft">20/03 · arr.16:10 · pick-up 16:30</div></div><div class="fpill"><div class="fl">Retour</div><div class="fn">D83705</div><div class="fr-r">MAD → CPH</div><div class="ft">22/03 · dép.12:30 · pick-up 10:00</div></div></div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+4520930245"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+45 20 93 02 45</a><a class="contact-btn contact-email" href="mailto:felix@felixsmith.dk"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>felix@felixsmith.dk</a></div></div>
+
+      <div class="guest-card fo"><div class="guest-num">5</div><div class="guest-name">Mohns Thilo<span class="guest-cat">Influencer</span></div><div class="guest-meta">Germany · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">IB774</div><div class="fr-r">HAM → MAD</div><div class="ft">20/03 · arr.18:55 · pick-up 19:15</div></div><div class="fpill nt"><div class="fl">Retour</div><div class="fn">IB1669</div><div class="fr-r">MAD → HAM</div><div class="ft">22/03 · dép.16:40 · TBC</div></div></div><div class="guest-note no">⚠️ Transfert retour à confirmer</div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+4917623763583"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+49 176 23 76 35 83</a><a class="contact-btn contact-email" href="mailto:hello@thisisthilo.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>hello@thisisthilo.com</a></div></div>
+
+      <div class="guest-card fo"><div class="guest-num">6</div><div class="guest-name">Caira Jeremy<span class="guest-cat">Influencer</span></div><div class="guest-meta">Belgium · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">IB604</div><div class="fr-r">BRU → MAD</div><div class="ft">20/03 · arr.09:25 · pick-up 09:45</div></div><div class="fpill nt"><div class="fl">Retour</div><div class="fn">IB601</div><div class="fr-r">MAD → BRU</div><div class="ft">23/03 · hors logistique</div></div></div><div class="guest-note no">Reste lundi 23 à ses frais</div><span class="badge-allergy">🚫 Allergie coriandre</span><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+3247608962 5"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+32 4 76 08 96 25</a><a class="contact-btn contact-email" href="mailto:jeremy.caira@live.be"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>jeremy.caira@live.be</a></div></div>
+
+      <div class="guest-card fr"><div class="guest-num">7</div><div class="guest-name">Marcos Hugo<span class="guest-cat">Youtuber</span></div><div class="guest-meta">Portugal · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">IB0530</div><div class="fr-r">LIS → MAD</div><div class="ft">20/03 · arr.10:45 · pick-up 11:40 (groupé Nicolet)</div></div><div class="fpill nt"><div class="fl">Retour</div><div class="fn">IB0537</div><div class="fr-r">MAD → LIS</div><div class="ft">21/03 · dép.19:40 · transfert séparé ~17h</div></div></div><div class="guest-note nr">🚨 Départ samedi soir — ne participe pas au dîner</div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+351935908871"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+351 935 908 871</a><a class="contact-btn contact-email" href="mailto:caronline.tv@gmail.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>caronline.tv@gmail.com</a></div></div>
+
+      <div class="guest-card"><div class="guest-num">8</div><div class="guest-name">Eisenberger Simon<span class="guest-cat">Youtuber</span></div><div class="guest-meta">Germany · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">LH1114</div><div class="fr-r">FRA → MAD</div><div class="ft">20/03 · arr.15:40 · pick-up 16:00 · avec Franz</div></div><div class="fpill"><div class="fl">Retour</div><div class="fn">LH1801</div><div class="fr-r">MAD → MUC</div><div class="ft">22/03 · dép.12:00 · pick-up 09:30 · avec Franz</div></div></div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+4915758858852"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+49 157 588 588 52</a><a class="contact-btn contact-email" href="mailto:management@electric-twins.de"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>management@electric-twins.de</a></div></div>
+
+      <div class="guest-card"><div class="guest-num">9</div><div class="guest-name">Franz Leon Thomas<span class="guest-cat">Videographer</span></div><div class="guest-meta">Germany · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">LH1114</div><div class="fr-r">FRA → MAD</div><div class="ft">20/03 · arr.15:40 · pick-up 16:00 · avec Eisenberger</div></div><div class="fpill"><div class="fl">Retour</div><div class="fn">LH1801</div><div class="fr-r">MAD → MUC</div><div class="ft">22/03 · dép.12:00 · pick-up 09:30 · avec Eisenberger</div></div></div><span class="badge-diet">🥦 Végétarien</span><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+4917656568076"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+49 176 56 56 80 76</a><a class="contact-btn contact-email" href="mailto:leon-t-sommer@web.de"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>leon-t-sommer@web.de</a></div></div>
+
+      <div class="guest-card fo"><div class="guest-num">10</div><div class="guest-name">Zachary Katherine<span class="guest-cat">VP Comms</span></div><div class="guest-meta">AMIEO · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">TO4780</div><div class="fr-r">ORY → MAD</div><div class="ft">20/03 · arr.22:00 · pick-up 22:20</div></div><div class="fpill nt"><div class="fl">Retour</div><div class="fn">TO4639</div><div class="fr-r">MAD → ORY</div><div class="ft">22/03 · dép.20:45 · sans transfert</div></div></div><div class="guest-note no">⚠️ Pas de transfert retour — à confirmer</div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+33663701119"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>(3366) 370-1119</a><a class="contact-btn contact-email" href="mailto:kzachary@nissan-europe.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>kzachary@nissan-europe.com</a></div></div>
+
+      <div class="guest-card fb"><div class="guest-num">11</div><div class="guest-name">Cailluet Sébastien<span class="guest-cat">Nissan PR</span></div><div class="guest-meta">AMIEO · EUR</div><div class="guest-flights"><div class="fpill"><div class="fl">Arrivée</div><div class="fn">AF1000</div><div class="fr-r">CDG → MAD</div><div class="ft">20/03 · arr.09:10 · pick-up 09:30</div></div><div class="fpill"><div class="fl">Retour</div><div class="fn">AF1301</div><div class="fr-r">MAD → CDG</div><div class="ft">22/03 · dép.12:35 · pick-up 10:00</div></div></div><div class="guest-contacts"><a class="contact-btn contact-tel" href="tel:+33647319572"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.4 1.13 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>+33 6 47 31 95 72</a><a class="contact-btn contact-email" href="mailto:scailluet@nissan-europe.com"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>scailluet@nissan-europe.com</a></div></div>
+    </div>
+
+  </div><!-- /scroll-content -->
+</div><!-- /screen-guest -->
+
+<!-- ══════════════════════════════════
+     SCREEN: ADMIN
+══════════════════════════════════ -->
+<div class="screen hidden" id="screen-admin">
+  <div class="app-header admin-mode">
+    <div class="header-row">
+      <button class="back-btn" onclick="goHome()" style="background:rgba(192,132,252,.2);color:var(--admin);">← Accueil</button>
+      <div class="header-mode-badge">⚙️ Organisateur</div>
+    </div>
+    <div class="header-title" style="color:var(--admin);">FE Madrid <span style="color:#fff">Admin</span></div>
+    <div class="header-sub" style="color:rgba(192,132,252,.7);">Vue organisateur · PIN protégé</div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" data-t="checklist" onclick="switchTab(this,'checklist','admin')">✓ Arrivées</button>
+    <button class="tab-btn" data-t="alerts" onclick="switchTab(this,'alerts','admin')">🔔 Alertes</button>
+    <button class="tab-btn" data-t="edit" onclick="switchTab(this,'edit','admin')">✏️ Éditer</button>
+    <button class="tab-btn" data-t="afri" onclick="switchTab(this,'afri','admin')">Ven.</button>
+    <button class="tab-btn" data-t="asat" onclick="switchTab(this,'asat','admin')">Sam.</button>
+  </div>
+
+  <div class="scroll-content">
+
+    <!-- CHECKLIST -->
+    <div class="tab-section visible" id="a-checklist">
+      <div class="admin-section-title">Checklist arrivées</div>
+      <div id="checklist-container">
+        <!-- dynamically populated + synced with Firebase -->
+      </div>
+      <div style="margin-top:16px;font-size:0.75rem;color:var(--muted);text-align:center;">Tap pour cocher · Sync temps réel</div>
+    </div>
+
+    <!-- ALERTS -->
+    <div class="tab-section" id="a-alerts">
+      <div class="admin-section-title">Envoyer une alerte</div>
+      <div class="push-card">
+        <div class="edit-label">Titre de l'alerte</div>
+        <input class="push-input" id="push-title" placeholder="ex: Changement d'horaire" maxlength="60">
+        <div class="edit-label" style="margin-top:8px;">Message</div>
+        <input class="push-input" id="push-body" placeholder="ex: Pitlane walk décalé à 13:30" maxlength="120">
+        <button class="push-btn" onclick="sendAlert()">🔔 Envoyer à tous les invités</button>
+      </div>
+
+      <div class="admin-section-title">Historique alertes</div>
+      <div id="alerts-history" style="font-size:0.78rem;color:var(--muted);">Chargement...</div>
+    </div>
+
+    <!-- EDIT -->
+    <div class="tab-section" id="a-edit">
+      <div class="admin-section-title">Modifications live</div>
+      <div class="banner b-blue"><strong>ℹ️ Comment ça marche</strong>Les modifications ici sont sauvegardées dans Firebase et apparaissent instantanément sur toutes les instances ouvertes de l'app.</div>
+
+      <div class="edit-card">
+        <div class="edit-label">Note urgente (affiché en haut de chaque jour)</div>
+        <input class="edit-input" id="edit-urgent" placeholder="ex: Bus départ décalé à 09:15">
+        <button class="edit-save" onclick="saveField('urgent_note', document.getElementById('edit-urgent').value)">Sauvegarder</button>
+      </div>
+
+      <div class="edit-card">
+        <div class="edit-label">Heure retour Jarama → Hôtel (actuellement 17:00)</div>
+        <input class="edit-input" id="edit-retour" placeholder="ex: 17:30">
+        <button class="edit-save" onclick="saveField('retour_jarama', document.getElementById('edit-retour').value)">Sauvegarder</button>
+      </div>
+
+      <div class="edit-card">
+        <div class="edit-label">Hôtel samedi soir (actuellement Torre de Madrid)</div>
+        <input class="edit-input" id="edit-hotel-sat" placeholder="ex: Torre de Madrid">
+        <button class="edit-save" onclick="saveField('hotel_samedi', document.getElementById('edit-hotel-sat').value)">Sauvegarder</button>
+      </div>
+
+      <div class="edit-card">
+        <div class="edit-label">Note libre (visible par tous)</div>
+        <textarea class="edit-input" id="edit-note" rows="3" placeholder="Note visible par tous les invités..."></textarea>
+        <button class="edit-save" onclick="saveField('note_libre', document.getElementById('edit-note').value)">Sauvegarder</button>
+      </div>
+    </div>
+
+    <!-- ADMIN FRIDAY (same as guest + editable) -->
+    <div class="tab-section" id="a-afri">
+      <div class="day-heading">
+        <div class="day-number" style="color:var(--yellow)">20</div>
+        <div><div class="day-name">Vendredi</div><div class="day-sub">Vue admin</div></div>
+      </div>
+      <div id="urgent-note-display" class="banner b-blue" style="display:none"></div>
+      <!-- Same agenda content as guest view — reusing DOM -->
+      <p style="color:var(--muted);font-size:0.82rem;padding:16px 0;">Même contenu que la vue invité. Utilisez l'onglet "Éditer" pour modifier les infos en live.</p>
+    </div>
+
+    <!-- ADMIN SATURDAY -->
+    <div class="tab-section" id="a-asat">
+      <div class="day-heading">
+        <div class="day-number" style="color:var(--red)">21</div>
+        <div><div class="day-name">Samedi</div><div class="day-sub">Vue admin</div></div>
+      </div>
+      <p style="color:var(--muted);font-size:0.82rem;padding:16px 0;">Même contenu que la vue invité. Utilisez l'onglet "Éditer" pour modifier les infos en live.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════
+// CONFIG
+// ══════════════════════════════════
+const PIN = '2026'; // Change here
+
+const GUESTS = [
+  { id:'cailluet',  name:'Cailluet Sébastien', meta:'AMIEO · Nissan PR',   flight:'AF1000 arr.09:10',  pickup:'09:30' },
+  { id:'caira',     name:'Caira Jeremy',         meta:'Belgium · Influencer', flight:'IB604 arr.09:25',   pickup:'09:45' },
+  { id:'marcos',    name:'Marcos Hugo',           meta:'Portugal · Youtuber',  flight:'IB0530 arr.10:45',  pickup:'11:40 (groupé)' },
+  { id:'nicolet',   name:'Nicolet Jean-Baptiste', meta:'France · Influencer',  flight:'AF1300 arr.11:30',  pickup:'11:40 (groupé)' },
+  { id:'rallo',     name:'Rallo Luca',            meta:'Italy · Influencer',   flight:'FR9601 arr.12:25',  pickup:'12:45' },
+  { id:'eisenberger',name:'Eisenberger Simon',    meta:'Germany · Youtuber',   flight:'LH1114 arr.15:40',  pickup:'16:00 (groupé)' },
+  { id:'franz',     name:'Franz Leon Thomas',     meta:'Germany · Videographer',flight:'LH1114 arr.15:40', pickup:'16:00 (groupé)' },
+  { id:'smith',     name:'Smith Felix',           meta:'eNest · Influencer',   flight:'UX3248 arr.16:10',  pickup:'16:30' },
+  { id:'mohns',     name:'Mohns Thilo',           meta:'Germany · Influencer', flight:'IB774 arr.18:55',   pickup:'19:15' },
+  { id:'zachary',   name:'Zachary Katherine',     meta:'AMIEO · VP Comms',     flight:'TO4780 arr.22:00',  pickup:'22:20' },
+  { id:'bassett',   name:'Bassett Sam',           meta:'UK · Influencer',      flight:'Voiture perso',     pickup:'Parking La Latina' },
+];
+
+// ══════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════
+function goHome() {
+  show('screen-home');
+  hide('screen-guest');
+  hide('screen-admin');
+}
+function goGuest() {
+  hide('screen-home', 'slide-left');
+  show('screen-guest');
+  initGuest();
+}
+function goAdmin() {
+  hide('screen-home', 'slide-left');
+  show('screen-admin');
+  initAdmin();
+}
+function show(id, cls) {
+  const el = document.getElementById(id);
+  el.classList.remove('hidden','slide-left');
+  if(cls) el.classList.add(cls);
+}
+function hide(id, cls) {
+  const el = document.getElementById(id);
+  el.classList.remove('hidden','slide-left');
+  void el.offsetWidth;
+  el.classList.add(cls || 'hidden');
+}
+
+// ══════════════════════════════════
+// PIN
+// ══════════════════════════════════
+let pinBuffer = '';
+function showPin() { document.getElementById('pin-modal').classList.remove('hidden'); pinBuffer=''; updateDots(); }
+function hidePin() { document.getElementById('pin-modal').classList.add('hidden'); pinBuffer=''; updateDots(); }
+function pinKey(k) {
+  if(k === 'del') { pinBuffer = pinBuffer.slice(0,-1); }
+  else if(pinBuffer.length < 4) { pinBuffer += k; }
+  updateDots();
+  if(pinBuffer.length === 4) {
+    setTimeout(() => {
+      if(pinBuffer === PIN) { hidePin(); goAdmin(); }
+      else { flashError(); pinBuffer=''; }
+    }, 200);
+  }
+}
+function updateDots() {
+  for(let i=0;i<4;i++) {
+    const d = document.getElementById('pd'+i);
+    d.classList.toggle('filled', i < pinBuffer.length);
+    d.classList.remove('error');
+  }
+}
+function flashError() {
+  for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.add('error');
+  setTimeout(updateDots, 600);
+  navigator.vibrate && navigator.vibrate([100,50,100]);
+}
+
+// ══════════════════════════════════
+// TABS
+// ══════════════════════════════════
+function switchTab(btn, id, mode) {
+  const prefix = mode === 'admin' ? 'a-' : 'g-';
+  document.querySelectorAll(`#screen-${mode} .tab-section`).forEach(s => s.classList.remove('visible'));
+  document.querySelectorAll(`#screen-${mode} .tab-btn`).forEach(b => b.classList.remove('active'));
+  const sec = document.getElementById(prefix + id);
+  if(sec) sec.classList.add('visible');
+  btn.classList.add('active');
+}
+
+// ══════════════════════════════════
+// TOAST
+// ══════════════════════════════════
+let toastTimer;
+function showToast(title, msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg ? `${title}: ${msg}` : title;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ══════════════════════════════════
+// PUSH NOTIFICATIONS
+// ══════════════════════════════════
+function requestPush() {
+  Notification.requestPermission().then(perm => {
+    if(perm === 'granted') {
+      document.getElementById('notify-bar').classList.add('hidden');
+      if(window._setupPush) window._setupPush();
+      showToast('✅ Notifications activées');
+    } else {
+      showToast('Notifications refusées');
+    }
+  });
+}
+
+function sendAlert() {
+  const title = document.getElementById('push-title').value.trim();
+  const body = document.getElementById('push-body').value.trim();
+  if(!title || !body) { showToast('Remplis le titre et le message'); return; }
+  if(window._sendPushToAll) {
+    window._sendPushToAll(title, body);
+    document.getElementById('push-title').value = '';
+    document.getElementById('push-body').value = '';
+  } else {
+    showToast('Firebase non configuré — voir guide');
+  }
+}
+
+// ══════════════════════════════════
+// GUEST INIT
+// ══════════════════════════════════
+function initGuest() {
+  // Show/hide notify bar
+  const bar = document.getElementById('notify-bar');
+  if(Notification.permission === 'granted' || Notification.permission === 'denied') {
+    bar.classList.add('hidden');
+  }
+  // Listen for live updates from Firebase
+  if(window._fbReady || window._db) { listenLiveUpdates(); }
+  else { window.addEventListener('fb-ready', listenLiveUpdates, { once: true }); }
+}
+
+function listenLiveUpdates() {
+  if(!window._db) return;
+  const { doc, onSnapshot } = window._fbModules;
+  // Listen for urgent notes
+  onSnapshot(doc(window._db, 'config', 'live'), (snap) => {
+    if(!snap.exists()) return;
+    const data = snap.data();
+    if(data.urgent_note) showToast('📢 Mise à jour', data.urgent_note);
+  });
+  // Listen for new alerts
+  onSnapshot(doc(window._db, 'alerts', 'latest'), (snap) => {
+    if(!snap.exists()) return;
+    const data = snap.data();
+    if(data.ts && Date.now() - data.ts < 30000) { // only recent alerts
+      showToast(data.title || 'Alerte', data.body || '');
+    }
+  });
+}
+
+// ══════════════════════════════════
+// ADMIN INIT
+// ══════════════════════════════════
+function initAdmin() {
+  buildChecklist();
+  if(window._fbReady || window._db) { loadAdminData(); }
+  else { window.addEventListener('fb-ready', loadAdminData, { once: true }); }
+}
+
+function buildChecklist() {
+  const c = document.getElementById('checklist-container');
+  if(c.children.length > 0) return; // already built
+  GUESTS.forEach(g => {
+    const el = document.createElement('div');
+    el.className = 'checklist-item';
+    el.id = 'chk-' + g.id;
+    el.onclick = () => toggleCheckin(g.id);
+    el.innerHTML = `
+      <div class="check-circle"><svg id="chk-icon-${g.id}" width="14" height="14" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24" style="display:none"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="check-name">
+        <div class="cn">${g.name}</div>
+        <div class="cm">${g.flight} · Pick-up ${g.pickup}</div>
+      </div>
+      <div class="check-time" id="chk-time-${g.id}"></div>
+    `;
+    c.appendChild(el);
+  });
+}
+
+let checkinStates = {};
+function toggleCheckin(id) {
+  if(!window._db) { showToast('Firebase non configuré'); return; }
+  const { doc, setDoc } = window._fbModules;
+  const isChecked = checkinStates[id];
+  const newState = { checked: !isChecked, ts: !isChecked ? Date.now() : null };
+  setDoc(doc(window._db, 'checkins', id), newState)
+    .then(() => updateChecklistUI(id, newState))
+    .catch(() => showToast('Erreur de sync'));
+}
+
+function updateChecklistUI(id, state) {
+  checkinStates[id] = state.checked;
+  const item = document.getElementById('chk-' + id);
+  const icon = document.getElementById('chk-icon-' + id);
+  const timeEl = document.getElementById('chk-time-' + id);
+  if(!item) return;
+  item.classList.toggle('checked', state.checked);
+  if(icon) icon.style.display = state.checked ? 'block' : 'none';
+  if(timeEl && state.ts) {
+    const d = new Date(state.ts);
+    timeEl.textContent = state.checked ? `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}` : '';
+  } else if(timeEl) { timeEl.textContent = ''; }
+}
+
+function loadAdminData() {
+  if(!window._db) return;
+  const { collection, getDocs, onSnapshot, doc } = window._fbModules;
+  // Load checkins
+  onSnapshot(collection(window._db, 'checkins'), (snap) => {
+    snap.forEach(d => updateChecklistUI(d.id, d.data()));
+  });
+  // Load config fields
+  onSnapshot(doc(window._db, 'config', 'live'), (snap) => {
+    if(!snap.exists()) return;
+    const d = snap.data();
+    if(d.urgent_note) document.getElementById('edit-urgent').value = d.urgent_note;
+    if(d.retour_jarama) document.getElementById('edit-retour').value = d.retour_jarama;
+    if(d.hotel_samedi) document.getElementById('edit-hotel-sat').value = d.hotel_samedi;
+    if(d.note_libre) document.getElementById('edit-note').value = d.note_libre;
+  });
+  // Load alerts history
+  onSnapshot(collection(window._db, 'alerts'), (snap) => {
+    const hist = document.getElementById('alerts-history');
+    if(snap.empty) { hist.textContent = 'Aucune alerte envoyée'; return; }
+    hist.innerHTML = '';
+    snap.forEach(d => {
+      const data = d.data();
+      const t = data.ts ? new Date(data.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '';
+      hist.innerHTML += `<div style="padding:8px 0;border-bottom:1px solid #1a1a1a;"><strong>${data.title||''}</strong> <span style="color:var(--muted);font-size:0.7rem">${t}</span><br>${data.body||''}</div>`;
+    });
+  });
+}
+
+function saveField(key, val) {
+  if(!window._db) { showToast('Firebase non configuré — voir guide'); return; }
+  const { doc, setDoc } = window._fbModules;
+  setDoc(doc(window._db, 'config', 'live'), { [key]: val }, { merge: true })
+    .then(() => showToast('✅ Sauvegardé'));
+}
+
+// ══════════════════════════════════
+// INIT
+// ══════════════════════════════════
+// Check notification permission on load
+window.addEventListener('load', () => {
+  if(Notification.permission === 'granted' || Notification.permission === 'denied') {
+    document.getElementById('notify-bar')?.classList.add('hidden');
+  }
+});
+</script>
+</body>
+</html>
