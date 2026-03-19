@@ -1,15 +1,15 @@
 {
-  "name": "Formula E Madrid 2026",
+  "name": "FE Madrid — Nissan",
   "short_name": "FE Madrid",
   "description": "Agenda officiel Nissan — Formula E Madrid ePrix 2026",
-  "start_url": "/",
+  "start_url": "/fe-madrid-2026/",
+  "scope": "/fe-madrid-2026/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#e8001d",
   "orientation": "portrait",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
